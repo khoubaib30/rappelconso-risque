@@ -1,0 +1,15 @@
+# environnement
+.venv/
+__pycache__/
+*.pyc
+.env
+
+# modèle (trop lourd pour GitHub, ~440 Mo)
+modele_rappelconso/
+*.zip
+
+# données et suivi des expériences
+data/
+mlflow.db
+mlruns/
+suivi_mlflow/
