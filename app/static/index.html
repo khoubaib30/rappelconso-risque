@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RappelConso – familles de risque</title>
+<style>
+  :root { --bg:#f7f7f5; --card:#fff; --text:#1d1d1b; --muted:#6b6b66; --line:#e2e2dd; --accent:#1f5fbf; --warn:#b4530a; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#161615; --card:#1f1f1d; --text:#ececea; --muted:#a3a39d; --line:#33332f; --accent:#7aa7ef; --warn:#f0a35e; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width:720px; margin:0 auto; padding:32px 16px; }
+  h1 { font-size:1.5rem; margin:0 0 4px; }
+  p.sous-titre { color:var(--muted); margin:0 0 24px; }
+  form, .resultat { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:20px; }
+  label { display:block; font-weight:600; font-size:.9rem; margin:14px 0 6px; }
+  label:first-child { margin-top:0; }
+  input, textarea { width:100%; padding:10px; border:1px solid var(--line); border-radius:6px; background:transparent; color:var(--text); font:inherit; }
+  textarea { min-height:90px; resize:vertical; }
+  .ligne { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  @media (max-width:520px) { .ligne { grid-template-columns:1fr; } }
+  button { margin-top:18px; padding:10px 18px; border:0; border-radius:6px; background:var(--accent); color:#fff; font:inherit; font-weight:600; cursor:pointer; }
+  button:disabled { opacity:.6; cursor:wait; }
+  .resultat { margin-top:16px; display:none; }
+  .familles { font-size:1.15rem; font-weight:700; margin:0 0 12px; }
+  .alerte { color:var(--warn); font-size:.9rem; margin:0 0 12px; }
+  .barre { display:grid; grid-template-columns:150px 1fr 52px; align-items:center; gap:8px; font-size:.9rem; margin:6px 0; }
+  .fond { height:8px; background:var(--line); border-radius:4px; overflow:hidden; }
+  .rempli { height:100%; background:var(--accent); }
+  .exemple { color:var(--accent); background:none; padding:0; margin:0 0 0 8px; font-weight:500; font-size:.9rem; }
+  footer { color:var(--muted); font-size:.85rem; margin-top:24px; }
+  footer a { color:var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Classification des rappels de produits</h1>
+  <p class="sous-titre">CamemBERT fine-tuné sur les fiches RappelConso : prédit la ou les familles de risque d'un rappel à partir de son texte.</p>
+
+  <form id="form">
+    <label for="motif">Motif du rappel <button type="button" class="exemple" id="exemple">remplir un exemple</button></label>
+    <textarea id="motif" required></textarea>
+    <label for="produit">Nom du produit</label>
+    <input id="produit" required>
+    <div class="ligne">
+      <div><label for="categorie">Catégorie</label><input id="categorie" placeholder="alimentation"></div>
+      <div><label for="sous_categorie">Sous-catégorie</label><input id="sous_categorie" placeholder="lait et produits laitiers"></div>
+    </div>
+    <button type="submit" id="envoyer">Prédire le risque</button>
+  </form>
+
+  <div class="resultat" id="resultat"></div>
+
+  <footer>Données : RappelConso (data.gouv.fr, Licence Ouverte 2.0). API : <a href="/docs">documentation /docs</a>.</footer>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const NOMS = {
+  microbiologique: "Microbiologique", chimique: "Chimique", allergene: "Allergène",
+  corps_etranger: "Corps étranger", blessure_physique: "Blessure / physique",
+  incendie_electrique: "Incendie / électrique", etiquetage_qualite: "Étiquetage / qualité",
+  autre_a_verifier: "Autre – à vérifier"
+};
+
+$("exemple").onclick = () => {
+  $("motif").value = "présence d'éclats de verre possible dans certains pots suite à un incident sur la ligne de production";
+  $("produit").value = "confiture de fraises 370 g";
+  $("categorie").value = "alimentation";
+  $("sous_categorie").value = "produits sucrés";
+};
+
+$("form").onsubmit = async (e) => {
+  e.preventDefault();
+  const bouton = $("envoyer"), zone = $("resultat");
+  bouton.disabled = true; bouton.textContent = "Analyse…";
+  try {
+    const rep = await fetch("/predict", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        motif: $("motif").value, produit: $("produit").value,
+        categorie: $("categorie").value, sous_categorie: $("sous_categorie").value
+      })
+    });
+    if (!rep.ok) throw new Error("Erreur " + rep.status);
+    const r = await rep.json();
+    zone.replaceChildren();
+    const titre = document.createElement("p");
+    titre.className = "familles";
+    titre.textContent = r.familles.map((f) => NOMS[f] || f).join(" + ");
+    zone.append(titre);
+    if (r.a_verifier) {
+      const a = document.createElement("p");
+      a.className = "alerte";
+      a.textContent = "Aucune famille ne dépasse le seuil de " + r.seuil + " : relecture humaine conseillée.";
+      zone.append(a);
+    }
+    for (const [famille, p] of Object.entries(r.scores)) {
+      const ligne = document.createElement("div"); ligne.className = "barre";
+      const nom = document.createElement("span"); nom.textContent = NOMS[famille] || famille;
+      const fond = document.createElement("div"); fond.className = "fond";
+      const rempli = document.createElement("div"); rempli.className = "rempli"; rempli.style.width = (p * 100) + "%";
+      fond.append(rempli);
+      const val = document.createElement("span"); val.textContent = Math.round(p * 100) + " %";
+      ligne.append(nom, fond, val); zone.append(ligne);
+    }
+    zone.style.display = "block";
+  } catch (err) {
+    zone.textContent = "Impossible d'obtenir une prédiction (" + err.message + ").";
+    zone.style.display = "block";
+  } finally {
+    bouton.disabled = false; bouton.textContent = "Prédire le risque";
+  }
+};
+</script>
+</body>
+</html>
