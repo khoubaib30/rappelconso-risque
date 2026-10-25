@@ -152,6 +152,8 @@ Tests : `pytest`
 
 ## Docker
 
+Le modèle fine-tuné est publié sur Hugging Face ([khoubeibbourbia/camembert-rappelconso](https://huggingface.co/khoubeibbourbia/camembert-rappelconso)) et téléchargé pendant la construction de l'image :
+
 ```bash
 docker build -t rappelconso-api .
 docker run -p 8000:8000 rappelconso-api

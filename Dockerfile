@@ -1,6 +1,9 @@
 # Image légère pour servir le modèle sur CPU
 FROM python:3.11-slim
 
+# Dépôt Hugging Face qui contient le modèle fine-tuné
+ARG MODEL_REPO=khoubeibbourbia/camembert-rappelconso
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -15,11 +18,14 @@ RUN pip install torch --index-url https://download.pytorch.org/whl/cpu
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
-# 3) Code de l'API et modèle entraîné
-COPY app ./app
-COPY modele_rappelconso ./modele_rappelconso
+# 3) Téléchargement du modèle depuis Hugging Face pendant la construction de l'image
+RUN test -n "$MODEL_REPO" || (echo "Préciser --build-arg MODEL_REPO=pseudo/nom-du-modele" && exit 1) && \
+    python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='${MODEL_REPO}', local_dir='${MODEL_DIR}')"
 
-# 4) On ne lance pas l'application en root
+# 4) Code de l'API
+COPY app ./app
+
+# 5) On ne lance pas l'application en root
 RUN useradd --create-home appuser && chown -R appuser /app
 USER appuser
 
