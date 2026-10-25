@@ -10,7 +10,7 @@ et renvoyer en relecture humaine les fiches pour lesquelles le modèle n'est pas
 
 **Résultat :** F1 macro de **0,90** contre 0,84 pour une baseline TF-IDF, sur les rappels de 2026 jamais vus à l'entraînement.
 
-![Démo de l'API déployée sur Azure Container Apps](docs/demo-azure.png)
+![Démo de l'API déployée sur Azure Container Apps](demo-azure.png)
 
 _Démo déployée sur Azure Container Apps (essai Azure) : l'API s'éteint quand elle n'est pas utilisée, le premier appel peut prendre jusqu'à une minute._
 
