@@ -8,6 +8,12 @@ Les fiches publiées sur **RappelConso** décrivent le problème en texte libre.
 **Usage visé :** trier automatiquement les nouveaux rappels (distributeurs, applications de consommateurs, services de contrôle),
 et renvoyer en relecture humaine les fiches pour lesquelles le modèle n'est pas assez sûr.
 
+**Résultat :** F1 macro de **0,90** contre 0,84 pour une baseline TF-IDF, sur les rappels de 2026 jamais vus à l'entraînement.
+
+![Démo de l'API déployée sur Azure Container Apps](docs/demo-azure.png)
+
+_Démo déployée sur Azure Container Apps (essai Azure) : l'API s'éteint quand elle n'est pas utilisée, le premier appel peut prendre jusqu'à une minute._
+
 ## Données
 
 - Source : [RappelConso V2](https://www.data.gouv.fr/datasets/rappelconso-v2-rappels-de-produits/) (DGCCRF, DGAL…), Licence Ouverte 2.0
@@ -106,13 +112,18 @@ Les expériences (paramètres, courbes, métriques) sont suivies avec **MLflow**
 ## Architecture
 
 ```
-CSV RappelConso ──► Notebook Colab (GPU) ──► modèle CamemBERT fine-tuné
-                     baseline + MLflow              │
-                                                    ▼
-                         API FastAPI (app/) ◄── image Docker
-                                                    │
-                     Azure Container Registry ──► Azure Container Apps (URL publique)
+CSV RappelConso ──► Notebook Colab (GPU) ──► modèle fine-tuné ──► Hugging Face Hub
+                     baseline + MLflow                                  │
+                                                                        ▼
+push sur main ──► GitHub Actions : tests (pytest) ──► build de l'image Docker (télécharge le modèle)
+                                                                        │
+                                                                        ▼
+                                  GitHub Container Registry (ghcr.io) ──► Azure Container Apps
+                                                                           (API FastAPI, URL publique)
 ```
+
+**CI/CD :** à chaque push sur `main`, GitHub Actions lance les tests ; s'ils passent, l'image Docker est construite et
+publiée sur ghcr.io avec deux tags (`latest` et le sha du commit). Voir `.github/workflows/ci.yml`.
 
 ## Structure
 
@@ -124,7 +135,9 @@ app/
 notebooks/
   rappelconso_camembert.ipynb   préparation, baseline, fine-tuning, MLflow, analyse d'erreurs
 tests/             tests de l'API (avec un mini-modèle factice)
+.github/workflows/ci.yml   pipeline CI/CD (tests + image Docker)
 Dockerfile
+pytest.ini
 ```
 
 ## Lancer en local
@@ -161,4 +174,26 @@ docker run -p 8000:8000 rappelconso-api
 
 ## Déploiement sur Azure
 
-_À compléter lors du déploiement (Azure Container Registry + Azure Container Apps)._
+L'image publiée par la CI sur ghcr.io est déployée sur **Azure Container Apps**, depuis Azure Cloud Shell :
+
+```bash
+az provider register --namespace Microsoft.App --wait
+az provider register --namespace Microsoft.OperationalInsights --wait
+
+az group create --name rg-rappelconso --location francecentral
+az containerapp env create --name env-rappelconso --resource-group rg-rappelconso --location francecentral
+
+az containerapp create --name rappelconso-api --resource-group rg-rappelconso \
+  --environment env-rappelconso \
+  --image ghcr.io/khoubaib30/rappelconso-risque:latest \
+  --target-port 8000 --ingress external \
+  --cpu 1.0 --memory 2.0Gi \
+  --min-replicas 0 --max-replicas 1
+```
+
+- `--min-replicas 0` : l'API s'éteint quand personne ne l'utilise (aucun coût au repos) et se réveille au premier appel.
+- `--cpu 1.0 --memory 2.0Gi` : de quoi charger CamemBERT en mémoire et prédire sur CPU.
+
+Pour déployer une nouvelle version après un push : `az containerapp update --name rappelconso-api --resource-group rg-rappelconso --image ghcr.io/khoubaib30/rappelconso-risque:<sha du commit>`.
+
+Pour tout supprimer : `az group delete --name rg-rappelconso`.
